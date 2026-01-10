@@ -48,6 +48,13 @@ jobs:
       - name: vulkansdk
         run: |
           winget install --id=KhronosGroup.VulkanSDK --disable-interactivity --accept-source-agreements --accept-package-agreements
+          # Find the installed Vulkan SDK path and set environment variables
+          $vulkanPath = Get-ChildItem "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if ($vulkanPath) {
+            echo "VULKAN_SDK=$($vulkanPath.FullName)" >> $env:GITHUB_ENV
+            echo "VK_SDK_PATH=$($vulkanPath.FullName)" >> $env:GITHUB_ENV
+            echo "$($vulkanPath.FullName)\Bin" >> $env:GITHUB_PATH
+          }
           
       - uses: actions/setup-python@v5
         with:
