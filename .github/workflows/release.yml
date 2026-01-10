@@ -47,7 +47,7 @@ jobs:
       
       - name: vulkansdk
         run: |
-          winget install --id=KhronosGroup.VulkanSDK --disable-interactivity --accept-source-agreements
+          winget install --id=KhronosGroup.VulkanSDK --disable-interactivity --accept-source-agreements --accept-package-agreements
           
       - uses: actions/setup-python@v5
         with:
