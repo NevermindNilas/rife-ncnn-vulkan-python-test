@@ -39,11 +39,16 @@ jobs:
       - name: Install winget
         uses: Cyberboss/install-winget@v1
         continue-on-error: true
-        
+
+      - name: Enable long paths
+        run: |
+          git config --system core.longpaths true
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+
       - uses: actions/checkout@v2
         with:
           submodules: recursive
-          path: src
+          path: b
       - uses: ilammy/msvc-dev-cmd@v1
       
       - name: vulkansdk
@@ -68,16 +73,16 @@ jobs:
         run: |
           pip install build
       - name: Build
-        working-directory: src
+        working-directory: b
         run: |
           $env:CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${{ matrix.python-version }}"
           python -m build -w .
-     
+
       - name: upload
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.python-version }}
-          path: src/dist/
+          path: b/dist/
 
   Release:
     needs: [setup, windows]
