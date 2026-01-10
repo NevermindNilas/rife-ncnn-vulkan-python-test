@@ -38,6 +38,7 @@ jobs:
     steps:
       - name: Install winget
         uses: Cyberboss/install-winget@v1
+        continue-on-error: true
         
       - uses: actions/checkout@v2
         with:
