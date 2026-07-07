@@ -1,110 +1,118 @@
 name: Release
+
 on:
   push:
     tags:
       - "*"
   workflow_dispatch:
 
+# cp314 wheels for TheAnimeScripter (win/linux/macos). Rehosted on TAS-Models-Host.
+env:
+  PY_VERSION: "3.14"
+
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      APPNAME: ${{ steps.get_appname.outputs.APPNAME }}
-      VERSION: ${{ steps.get_version.outputs.VERSION }}
-      DATE: ${{ steps.get_date.outputs.DATE }}
-    steps:
-      - name: Get current date
-        id: get_date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-      - name: Get app name
-        id: get_appname
-        run: echo ::set-output name=APPNAME::${{ github.event.repository.name }}
-      - name: Get version
-        id: get_version
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-
-
-
   windows:
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-
-    needs: [setup]
-    
     runs-on: windows-latest
-    env:
-      PACKAGENAME: ${{ needs.setup.outputs.APPNAME }}-${{ needs.setup.outputs.VERSION }}-windows
     steps:
-      - name: Install winget
-        uses: Cyberboss/install-winget@v1
-        continue-on-error: true
-
       - name: Enable long paths
-        run: |
-          git config --system core.longpaths true
-          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+        run: git config --system core.longpaths true
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-          path: b
+
       - uses: ilammy/msvc-dev-cmd@v1
-      
-      - name: vulkansdk
+
+      - name: Install SWIG
+        run: choco install swig ninja -y --no-progress
+
+      - name: Install Vulkan SDK
+        shell: pwsh
         run: |
-          winget install --id=KhronosGroup.VulkanSDK --disable-interactivity --accept-source-agreements --accept-package-agreements
-          # Find the installed Vulkan SDK path and set environment variables
+          winget install --id KhronosGroup.VulkanSDK --disable-interactivity --accept-source-agreements --accept-package-agreements
           $vulkanPath = Get-ChildItem "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-          if ($vulkanPath) {
-            echo "VULKAN_SDK=$($vulkanPath.FullName)" >> $env:GITHUB_ENV
-            echo "VK_SDK_PATH=$($vulkanPath.FullName)" >> $env:GITHUB_ENV
-            echo "$($vulkanPath.FullName)\Bin" >> $env:GITHUB_PATH
-          }
-          
+          echo "VULKAN_SDK=$($vulkanPath.FullName)" >> $env:GITHUB_ENV
+          echo "$($vulkanPath.FullName)\Bin" >> $env:GITHUB_PATH
+
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PY_VERSION }}
           architecture: x64
-      - name: Check Python version
+
+      - name: Build wheel
+        shell: pwsh
         run: |
-          python --version
-      - name: Install dependencies
-        run: |
-          pip install build
-      - name: Build
-        working-directory: b
-        run: |
-          $env:CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${{ matrix.python-version }}"
+          python -m pip install --upgrade build
+          $env:CMAKE_FLAGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=$env:PY_VERSION"
           python -m build -w .
 
-      - name: upload
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.python-version }}
-          path: b/dist/
+          name: wheel-windows
+          path: dist/*.whl
 
-  Release:
-    needs: [setup, windows]
+  linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          path: asset
-  
-      - name: dist
+          submodules: recursive
+
+      - name: Install build deps
         run: |
-          mkdir -p dist
-          find asset -type f -name "*.whl" -exec cp {} dist/ \;
-          cd dist && ls
-  
-      
-      - name: Create Release and Upload Release Asset
-        uses: softprops/action-gh-release@v1
+          sudo apt-get update
+          sudo apt-get install -y swig libvulkan-dev vulkan-headers ninja-build build-essential
+
+      - uses: actions/setup-python@v5
         with:
-          name: Release ${{ needs.setup.outputs.DATE }}
-          tag_name: ${{ needs.setup.outputs.DATE }}
-          body: Auto Release.
-          draft: false
-          prerelease: false
-          files: dist/*
+          python-version: ${{ env.PY_VERSION }}
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade build
+          export CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${PY_VERSION}"
+          python -m build -w .
+
+      - name: Rename linux -> manylinux
+        run: python replace_whl.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux
+          path: dist/*.whl
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14   # arm64
+          - runner: macos-13   # x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: brew install swig ninja molten-vk vulkan-headers vulkan-loader
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+
+      - name: Build wheel
+        run: |
+          BREW="$(brew --prefix)"
+          export VULKAN_SDK="$BREW"
+          python -m pip install --upgrade build
+          export CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${PY_VERSION} -DVulkan_INCLUDE_DIR=${BREW}/include -DVulkan_LIBRARY=${BREW}/lib/libvulkan.dylib"
+          python -m build -w .
+
+      - name: Rename macos universal2 -> arch
+        run: python replace_whl.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-macos-${{ matrix.runner }}
+          path: dist/*.whl
