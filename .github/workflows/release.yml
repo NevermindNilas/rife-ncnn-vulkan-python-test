@@ -14,12 +14,18 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
+      # Short checkout path (b) + long-path registry avoid MSVC MAX_PATH (260)
+      # errors on ncnn/glslang's deep object paths (C1083 empty-filename).
       - name: Enable long paths
-        run: git config --system core.longpaths true
+        shell: pwsh
+        run: |
+          git config --system core.longpaths true
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
 
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          path: b
 
       - uses: ilammy/msvc-dev-cmd@v1
 
@@ -41,6 +47,7 @@ jobs:
 
       - name: Build wheel
         shell: pwsh
+        working-directory: b
         run: |
           python -m pip install --upgrade build
           $env:CMAKE_FLAGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=$env:PY_VERSION"
@@ -49,7 +56,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wheel-windows
-          path: dist/*.whl
+          path: b/dist/*.whl
 
   linux:
     runs-on: ubuntu-latest
@@ -61,7 +68,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y swig libvulkan-dev vulkan-headers ninja-build build-essential
+          sudo apt-get install -y swig libvulkan-dev ninja-build build-essential
 
       - uses: actions/setup-python@v5
         with:
