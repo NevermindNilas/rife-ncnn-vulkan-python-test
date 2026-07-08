@@ -50,9 +50,10 @@ jobs:
         run: |
           subst W: "$(Get-Location)"
           Set-Location W:\
-          python -m pip install --upgrade build
+          python -m pip install --upgrade build wheel
           $env:CMAKE_FLAGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=$env:PY_VERSION"
           python -m build -w .
+          python strip_wheel.py dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -77,9 +78,10 @@ jobs:
 
       - name: Build wheel
         run: |
-          python -m pip install --upgrade build
+          python -m pip install --upgrade build wheel
           export CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${PY_VERSION}"
           python -m build -w .
+          python strip_wheel.py dist
 
       - name: Rename linux -> manylinux
         run: python replace_whl.py
@@ -113,9 +115,10 @@ jobs:
         run: |
           BREW="$(brew --prefix)"
           export VULKAN_SDK="$BREW"
-          python -m pip install --upgrade build
+          python -m pip install --upgrade build wheel
           export CMAKE_FLAGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DPY_VERSION=${PY_VERSION} -DVulkan_INCLUDE_DIR=${BREW}/include -DVulkan_LIBRARY=${BREW}/lib/libvulkan.dylib"
           python -m build -w .
+          python strip_wheel.py dist
 
       - name: Rename macos universal2 -> arch
         run: python replace_whl.py
